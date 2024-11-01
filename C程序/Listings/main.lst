@@ -1,0 +1,206 @@
+C51 COMPILER V9.60.7.0   MAIN                                                              12/20/2023 02:13:35 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: D:\Keil_v5\C51\BIN\C51.EXE User\main.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\User;.\App) DEBUG OBJECTEX
+                    -TEND PRINT(.\Listings\main.lst) TABS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          #include <REGX52.H>
+   2          #include "public.h"
+   3          #include "lcd1602.h"
+   4          #include <I2C.H>
+   5          #include <stdio.h>
+   6          #define  PCF8591 0x90    //PCF8591 地址
+   7          sbit fmq=P1^0;
+   8          sbit led=P1^1;
+   9          sbit Sevro_moto_pwm=P3^7;     // 舵机信号线（橙色）
+  10          sbit hongw=P3^0;
+  11          // 变量定义
+  12          unsigned char AD_CHANNEL;
+  13          unsigned long xdata  LedOut[8];
+  14          unsigned int  D[32];
+  15          
+  16          u8 v_buf[5];
+  17          u8 a=0;
+  18          bit DACconversion(unsigned char sla,unsigned char c,  unsigned char Val);
+  19          bit ISendByte(unsigned char sla,unsigned char c);
+  20          unsigned char IRcvByte(unsigned char sla);
+  21          
+  22          unsigned char pwm_val  = 0;//变量定义
+  23          unsigned char push_val = 14;//舵机归中，产生约，1.5MS 信号
+  24                  
+  25          /**********************************************************************************************
+  26          **                              TIMER1中断服务子函数产生PWM信号
+  27          **********************************************************************************************/
+  28          
+  29          void time1()interrupt 3   using 2
+  30          { 
+  31   1        TH1=(65536-100)/256;    //100US定时
+  32   1        TL1=(65536-100)%256;
+  33   1        pwm_val++;
+  34   1        if(pwm_val<=push_val)   
+  35   1          Sevro_moto_pwm=1;   //PWM信号高电平时间
+  36   1        else 
+  37   1          Sevro_moto_pwm=0;   //PWM信号高电平时间
+  38   1        if(pwm_val>=100)
+  39   1          pwm_val=0;
+  40   1      }
+  41          /*******************************************************************
+  42          DAC 变换, 转化函数               
+  43          *******************************************************************/
+  44          bit DACconversion(unsigned char sla,unsigned char c,  unsigned char Val)
+  45          {
+  46   1         Start_I2c();              //启动总线
+  47   1         SendByte(sla);            //发送器件地址
+  48   1         if(ack==0)return(0);
+  49   1         SendByte(c);              //发送控制字节
+  50   1         if(ack==0)return(0);
+  51   1         SendByte(Val);            //发送DAC的数值  
+  52   1         if(ack==0)return(0);
+  53   1         Stop_I2c();               //结束总线
+  54   1         return(1);
+C51 COMPILER V9.60.7.0   MAIN                                                              12/20/2023 02:13:35 PAGE 2   
+
+  55   1      }
+  56          
+  57          /*******************************************************************
+  58          ADC发送字节[命令]数据函数               
+  59          *******************************************************************/
+  60          bit ISendByte(unsigned char sla,unsigned char c)
+  61          {
+  62   1         Start_I2c();              //启动总线
+  63   1         SendByte(sla);            //发送器件地址
+  64   1         if(ack==0)return(0);
+  65   1         SendByte(c);              //发送数据
+  66   1         if(ack==0)return(0);
+  67   1         Stop_I2c();               //结束总线
+  68   1         return(1);
+  69   1      }
+  70          
+  71          /*******************************************************************
+  72          ADC读字节数据函数               
+  73          *******************************************************************/
+  74          unsigned char IRcvByte(unsigned char sla)
+  75          {  unsigned char c;
+  76   1      
+  77   1         Start_I2c();          //启动总线
+  78   1         SendByte(sla+1);      //发送器件地址
+  79   1         if(ack==0)return(0);
+  80   1         c=RcvByte();          //读取数据0
+  81   1      
+  82   1         Ack_I2c(1);           //发送非就答位
+  83   1         Stop_I2c();           //结束总线
+  84   1         return(c);
+  85   1      }
+  86          
+  87          /*******************************************************************************
+  88          * 函 数 名       : main
+  89          * 函数功能     : 主函数
+  90          * 输    入       : 无
+  91          * 输    出       : 无
+  92          *******************************************************************************/
+  93          void main()
+  94          { 
+  95   1        u16 v=0;
+  96   1        lcd1602_init();//LCD1602初始化
+  97   1        lcd1602_show_string(0,0,"======LJT======");//第一行显示
+  98   1        lcd1602_show_string(0,1,"  loading...");//第二行显示
+  99   1        delay_ms(1000);
+ 100   1        delay_ms(1000);
+ 101   1        lcd1602_show_string(0,0,"                ");//第一行显示
+ 102   1        lcd1602_show_string(0,1,"                ");//第二行显示
+ 103   1        lcd1602_show_string(0,0,"100ppm");//第一行显示
+ 104   1        lcd1602_show_string(0,1,"MQ-2:");//第二行显示
+ 105   1        TMOD=0X10;
+ 106   1        TH1=(65536-100)/256;    //100US定时
+ 107   1        TL1=(65536-100)%256;
+ 108   1        TR1= 1;
+ 109   1        ET1= 1;
+ 110   1        EA = 1; 
+ 111   1        push_val=13;    //舵机归中，机器执行指令有周期，所以PWM信号有误差
+ 112   1        delay_ms(1000);   //延时1S让舵机转到其位置，停留一下
+ 113   1        while(1)
+ 114   1        {
+ 115   2          /********以下AD-DA处理*************/  
+ 116   2          switch(AD_CHANNEL)
+C51 COMPILER V9.60.7.0   MAIN                                                              12/20/2023 02:13:35 PAGE 3   
+
+ 117   2          {
+ 118   3          case 0: ISendByte(PCF8591,0x41);
+ 119   3          D[0]=IRcvByte(PCF8591);  //ADC0 模数转换1      光敏电阻
+ 120   3          break;  
+ 121   3      
+ 122   3          case 1: ISendByte(PCF8591,0x42);
+ 123   3          D[1]=IRcvByte(PCF8591);  //ADC1  模数转换2    热敏电阻
+ 124   3          break;  
+ 125   3      
+ 126   3          case 2: ISendByte(PCF8591,0x43);
+ 127   3          D[2]=IRcvByte(PCF8591);  //ADC2 模数转换3    悬空
+ 128   3          break;  
+ 129   3      
+ 130   3          case 3: ISendByte(PCF8591,0x40);
+ 131   3          D[3]=IRcvByte(PCF8591);  //ADC3   模数转换4    可调0-5v
+ 132   3          break;  
+ 133   3      
+ 134   3          case 4: DACconversion(PCF8591,0x40, D[4]); //DAC    数模转换
+ 135   3          break;
+ 136   3      
+ 137   3          }
+ 138   2        //  D[4]=D[0];  //把模拟输入采样的信号 通过数模转换输出
+ 139   2          if(++AD_CHANNEL>4) AD_CHANNEL=0;
+ 140   2      ////////////////////////////////////////////////
+ 141   2          v=D[0];
+ 142   2          v_buf[0]=v/100+0x30;
+ 143   2          v_buf[1]=v%100/10+0x30;
+ 144   2          v_buf[2]=v%10%10+0x30;
+ 145   2          v_buf[3]='\0';
+ 146   2          lcd1602_show_string(5,1,v_buf);
+ 147   2          if(v>100)
+ 148   2          {
+ 149   3            fmq=0;
+ 150   3            led=0;
+ 151   3            delay_ms(200);
+ 152   3            fmq=1;
+ 153   3            led=1;
+ 154   3            delay_ms(200);
+ 155   3            
+ 156   3          }
+ 157   2          else
+ 158   2          {
+ 159   3            fmq=1;
+ 160   3            led=1;  
+ 161   3          }
+ 162   2          
+ 163   2          if(hongw==0)
+ 164   2          {
+ 165   3            push_val=4;   //舵机向正转约90度，机器执行指令有周期，所以PWM信号有误差
+ 166   3            delay_ms(500); //延时500MS让舵机转到其位置
+ 167   3          }
+ 168   2          else if(hongw==1)
+ 169   2          {
+ 170   3            push_val=22;    //舵机向反转约90度，机器执行指令有周期，所以PWM信号有误差
+ 171   3            delay_ms(500);; //延时500MS让舵机转到其位置
+ 172   3          }
+ 173   2      
+ 174   2        }
+ 175   1      }
+ 176          
+
+
+C51 COMPILER V9.60.7.0   MAIN                                                              12/20/2023 02:13:35 PAGE 4   
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    556    ----
+   CONSTANT SIZE    =     59    ----
+   XDATA SIZE       =     32    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     73       9
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
